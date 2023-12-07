@@ -1,30 +1,44 @@
 
 from tensorflow.keras.applications import * #Efficient Net included here
-from tensorflow.keras import models
-from tensorflow.keras import layers
-from keras.preprocessing.image import ImageDataGenerator
-import os
-import shutil
-import pandas as pd
-from sklearn import model_selection
-from tqdm import tqdm
-from tensorflow.keras import optimizers
-import tensorflow as tf
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import sklearn.metrics as metrics
-
-#Use this to check if the GPU is configured correctly
-from tensorflow.python.client import device_lib
+#from tensorflow_core.python.keras import models
 
 from dataGen import distributeData
 
 
-print(device_lib.list_local_devices())
+import sklearn.metrics as metrics
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import re
+import random
+import pandas as pd
 
+
+import tensorflow as tf
+from tensorflow.keras import models
+from tensorflow import keras
+#import keras
+from tensorflow.keras.applications import EfficientNetB4
+#from tensorflow_core.python.keras import models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras import layers
+from tensorflow.keras.callbacks import EarlyStopping
 
 """
+GPU ACCELERATION: 
+https://medium.com/analytics-vidhya/installing-tensorflow-cuda-cudnn-for-nvidia-geforce-gtx-1650-ti-onwindow-10-99ca25020d6c
+https://medium.com/analytics-vidhya/step-by-step-guide-to-setup-gpu-with-tensorflow-on-windows-laptop-c84634f59857#:~:text=For%20GeForce%20GTX%201650%20%3D%3E%20Cuda,(compute%20compatibility)%20are%20compatible.
+
+
+FOR EFFICIENT NET NEED 
+
+tensorflow 2.3.0 import all keras related things from tensorflow as per above
+CUDA v10.1
+CUDNN 8.05
+
+
+create virtual environment with python 3.7 and tensorflow version 1.15
+
 meetings monday 11am
 
 
@@ -41,10 +55,20 @@ QUESTIONS:      https://towardsdatascience.com/convolutional-neural-networks-exp
 """
 
 
-IMG_SIZE = 528  #this is determined by what efficient net you use, specified at https://keras.io/examples/vision/image_classification_efficientnet_fine_tuning/
-BATCH_SIZE = 64
+IMG_SIZE = 380  #this is determined by what efficient net you use, specified at https://keras.io/examples/vision/image_classification_efficientnet_fine_tuning/
+BATCH_SIZE = 32
 NUM_EPOCHS = 60 #picked because "Note that the convergence may take up to 50 epochs depending on choice of learning rate."
 
+def unfreeze_model(model):
+
+    for layer in model.layers[-50:]:
+        if not isinstance(layer, layers.BatchNormalization):
+            layer.trainable=True
+
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+    model.compile(
+        optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"]
+    )
 
 
 def build_model():
@@ -55,7 +79,7 @@ def build_model():
     x = seq(inputs)
 
     #model = EfficientNetB3(include_top=False, input_tensor=x, weights="imagenet")   #include_top=False so we can use our own output (top) layers
-    model = EfficientNetB6(include_top=False, input_tensor=x, weights="imagenet", drop_connect_rate=0.5) 
+    model = EfficientNetB4(include_top=False, input_tensor=x, weights="imagenet", drop_connect_rate=0.5)
 
     model.trainable=False   #freezing the core of the model so that it sticks with pretrained weights
 
@@ -63,9 +87,7 @@ def build_model():
     x = layers.GlobalAveragePooling2D(name="avg_pool")(model.output)
     x = layers.BatchNormalization()(x)
 
-    top_dropout_rate=0.5
-    x = layers.Dropout(top_dropout_rate, name="top_dropout")(x)
-
+    x = layers.Dropout(0.5, name="top_dropout")(x)
 
     outputs = layers.Dense(1, activation="sigmoid", name="pred")(x) #activation=sigmoid because binary - https://towardsdatascience.com/how-to-choose-the-right-activation-function-for-neural-networks-3941ff0e6f9c#:~:text=In%20a%20binary%20classifier%2C%20we,with%20one%20node%20per%20class.
 
@@ -80,11 +102,21 @@ def build_model():
     
 def main():
 
+    print("keras version:   " + str(keras.__version__))
+    print("tensorflow version:  " + str(tf.__version__))
     random_seed=1   #must be an integer, to be used in the splitting of dataset into training and testing
 
     distributeData(random_seed)
 
+    print(tf.config.experimental.list_physical_devices('GPU'))
+
     model = build_model()
+
+    print(model.summary())
+
+    unfreeze_model(model)
+
+    print(model.summary())
 
     train = ImageDataGenerator(rescale=1/255)
     validation = ImageDataGenerator(rescale=1/255)
@@ -102,23 +134,27 @@ def main():
 
 
     test_dataset = test.flow_from_directory("data/testing",
-                                            target_size=(500,500),
-                                            batch_size=64,
+                                            target_size=(IMG_SIZE,IMG_SIZE),
+                                            batch_size=BATCH_SIZE,
                                             class_mode='binary')
 
 
 
-    model_fit = model.fit(train_dataset, epochs=NUM_EPOCHS, validation_data=validation_dataset)
+
+    model_fit = model.fit(train_dataset, epochs=NUM_EPOCHS, validation_data=validation_dataset, callbacks=[EarlyStopping(monitor='accuracy', patience = 10)])
+
 
     history_df = pd.DataFrame(model_fit.history)
 
     with open("history.csv", mode ='w') as f:
         history_df.to_csv(f)
 
-    test_predictions = model.predict(test_dataset)
-    test_predicted_classes = np.argmax(test_predictions, axis=1)
+    test_predictions = model.predict_generator(test_dataset)
+    test_predicted_classes = [round(x[0]) for x in test_predictions]
     test_true = test_dataset.classes
 
+
+    print(test_predictions)
     print(test_predicted_classes)
     print(test_true)
 
@@ -130,4 +166,5 @@ def main():
     cm_display = metrics.ConfusionMatrixDisplay(confusion_matrix = confusion_matrix, display_labels=["bad", "good"])
     cm_display.plot()
     plt.show()
+
 main()

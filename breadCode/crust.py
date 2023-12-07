@@ -403,7 +403,7 @@ def crustWidth(crustCanvas, img, scale):
 def findCrust(file, img, selK, hueWeight, lumWeight, canvas, scale, crustImage):
     """
 
-    DEOSN'T ACTUALLY DO THIS ANYMORE BECAUSE CRUST DETECTION HAS BEEN DONE WITH VERONICA'S METHOD, THIS IS REALLY JUST TO GET THE WIDTHS NOW AND WRITE TO OUTPUT
+    DEOSN'T ACTUALLY DO THIS ANYMORE BECAUSE CRUST DETECTION HAS BEEN DONE WITH OTHER METHOD, THIS IS REALLY JUST TO GET THE WIDTHS NOW AND WRITE TO OUTPUT
 
     method to identify the crust on a piece of bread
 

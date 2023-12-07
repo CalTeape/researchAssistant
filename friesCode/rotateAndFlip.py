@@ -61,7 +61,31 @@ def recurse(dir, outputDir):
             for subdir in contents:
                 recurse(dir + subdir + "/", outputDir + subdir + "/")
 
-def main():
-    recurse("data/training/bad/", "fullData/training/bad/")
 
-main()
+def iterate(dir):
+        """
+        Method to do more or less exact same as above, but this time doesn't work over nested directory structure (and doesn't need different output dir)
+
+        This is to be called to apply rotations and reflections to one directory (fullData)
+        """
+        contents = os.listdir(dir)
+        if re.search("jpg", contents[0]):
+            for image in contents:
+                print(dir + image)
+                img = cv2.imread(dir+image)
+                img = center(img)
+
+                theta = 0
+                while theta < 360:
+                    rotated = rotate(img, theta)
+                    if theta == 0:
+                        cv2.imwrite(dir+image, rotated)
+                        flip_v = cv2.flip(rotated, 0)
+                        flip_h = cv2.flip(rotated, 1)
+                        cv2.imwrite(dir+image.split(".")[0]+"(flipped_h).jpg", flip_h)
+                        cv2.imwrite(dir+image.split(".")[0]+"(flipped_v).jpg", flip_v)
+                    else:
+                        cv2.imwrite(dir+image.split(".")[0]+"(" + str(theta) + ").jpg", rotated)
+                    theta += 30
+
+

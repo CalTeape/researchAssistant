@@ -4,18 +4,28 @@ from tensorflow.keras.optimizers import RMSprop
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
-import cv2
+import math
+#import cv2
+import imageio.v2 as iio
 import os
 import re
 import random
 import pandas as pd
 
+from rotateAndFlip import iterate
+from rotateAndFlip import rotate
+from rotateAndFlip import center
+
 from sklearn.model_selection import train_test_split # Import train_test_split function
 
 
+"""
+NEED TO CHANGE THE WAY THIS WORKS:
 
+HAVE SOME TARGET NUMBER OF IMAGES, and only apply as many rotations as neccessary to reach target. So big classes may 
+only have  a few, but small classes need to be fleshed out with many to have the same size as the big classes.
 
-
+"""
 def processFileString(file):
     result = ""
     for c in file:
@@ -52,18 +62,43 @@ def matchingCond(file, filepath):
         return not re.search("No", file)
 
 
-def balanceDirectories():
-    trainingGood = "fullData/testing/good/"
-    trainingBad = "fullData/testing/bad/"
-    
-    dst_path = "fullData/testingOverflow/"
+def balanceDirectories(targetDir):
 
-    good = os.listdir(trainingGood)
-    bad = os.listdir(trainingBad)
+    zero = os.listdir(targetDir + "zeroString")
+    good = os.listdir(targetDir + "good")
+    bad = os.listdir(targetDir + "bad")
 
-    while len(bad) > len(good):
-        os.rename(trainingBad + bad[0], dst_path + bad[0])
-        bad.remove(bad[0]) 
+    dirStrings = ["zeroString/", "good/", "bad/"]
+    dirs = [zero, good, bad]
+
+
+    target = max(len(zero), len(good), len(bad))*10
+
+    for k in range(3):
+        count = len(dirs[k])
+        index = 0
+        numRotations = math.ceil(target/len(dirs[k]))
+
+        while count < target:
+            if index > len(dirs[k]):
+                index = 0
+            file = dirs[k][index]
+            print(targetDir + dirStrings[k]+file)
+            img = iio.imread(targetDir + dirStrings[k] + file)
+            img = center(img)
+
+            for i in range(1,numRotations):
+                theta = int(360*(i/numRotations))
+                rotated = rotate(img, theta)
+                iio.imwrite(targetDir + dirStrings[k] + file.split(".")[0]+ "(" + str(theta) + ").jpg", rotated)
+                count += 1
+
+            index += 1
+
+
+
+
+
 
 
 def emptyData(dir):
@@ -99,7 +134,7 @@ def distributeData(random_seed):
     target_variable = "Final majority vote"
     col_names.append(target_variable)
 
-    dataset = pd.read_csv("csv/dataset.csv", header=0, names=col_names)
+    dataset = pd.read_csv("dataset.csv", header=0, names=col_names)
 
     print(len(dataset))
 
@@ -112,18 +147,6 @@ def distributeData(random_seed):
 
 
     directories6 = []
-
-    """
-    dir = "processed/Healthy/segment/"
-    healthies = os.listdir(dir)
-    for image in healthies:
-        directories6.append(dir+image)
-
-    dir = "processed/Infected/segment/"
-    infecties = os.listdir(dir)
-    for image in infecties:
-        directories6.append(dir+image)
-    """
 
     dir = "fullData/"
     images = os.listdir(dir)
@@ -138,8 +161,8 @@ def distributeData(random_seed):
     qualityDict = dict(zip(targetFiles, quality))
     missing = list(targetFiles)
 
-    zeroStringBadClass = []       #"<0", "00", "000"
-    nonZeroBadClass = []            # >2 and 0
+    zeroString = []       #"<0", "00", "000"
+    badClass = []            # >2 and 0
     goodClass = []                 # <= 2 and > 0
 
 
@@ -148,61 +171,46 @@ def distributeData(random_seed):
             #print(processFileString(file))
             if re.search(processFileString(file),filepath) and matchingCond(file, filepath):
 
-            #    #MATCH
-            #    goodOrBad = "bad/"
-            #    
-            #    if not re.search("000", qualityDict[file]) and not re.search("00", qualityDict[file]) and not re.search("<0", qualityDict[file]):
-            #        if float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0:
-            #            goodOrBad = "good/"
-
-            #    img = cv2.imread(filepath)
-            #    #print(file)
-            #    cv2.imwrite("data/training/" + goodOrBad + file + ".jpg", img)  
-            #    missing.remove(file)
-            #    break
-
-
-                #missing.remove(file)
-
-                #directories6.remove(filepath)
-                #print("FOUND MATCH BETWEEN: " + file + ", located at filepath: " + filepath)
-                if re.search("000", qualityDict[file]) or re.search("00", qualityDict[file]) or re.search("<0", qualityDict[file]):
-                    zeroStringBadClass.append(filepath)
+                if re.search("000", qualityDict[file]) or re.search("00", qualityDict[file]):
+                    zeroString.append(filepath)
                     continue
-                
-                elif float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0:
+
+                elif re.search("<0", qualityDict[file]):
+                    zeroString.append(filepath)
+                    continue
+
+                elif float(qualityDict[file]) <= 0.5:
+                    zeroString.append(filepath)
+                    continue
+
+                elif float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0.5:
                     goodClass.append(filepath)
                     continue
 
                 else:
-                    nonZeroBadClass.append(filepath)
+                    badClass.append(filepath)
                     continue
 
 
-    print("length of the zero string bad class training is: " + str(len(zeroStringBadClass)))
-    print("length of the numeric bad class training is: " + str(len(nonZeroBadClass)))
-    print("length of the numeric good class training is: " + str(len(goodClass)))
+    print("length of zero class training is: " + str(len(zeroString)))
+    print("length of the good class training is: " + str(len(goodClass)))
+    print("length of the bad class training is: " + str(len(badClass)))
 
+    for i in range(max(len(zeroString), len(goodClass), len(badClass))):
+        if i < len(zeroString):
+            img = iio.imread(zeroString[i])
+            label = zeroString[i].split("/")[1]
+            iio.imwrite("data/training/zeroString/" + label, img)
 
+        if i < len(badClass):
+            img = iio.imread(badClass[i])
+            label = badClass[i].split("/")[1]
+            iio.imwrite("data/training/bad/" + label, img)
 
-    for i in range(len(zeroStringBadClass)):        #NOTE THIS LOOP STRICTLY ASSUMES THAT THE NUMBER OF "00", "000", "<0" will be the smallest class out of the images
-        img = cv2.imread(zeroStringBadClass[i])
-        label = zeroStringBadClass[i].split("/")[1]
-        cv2.imwrite("data/training/bad/" + label, img)
-
-        img = cv2.imread(nonZeroBadClass[i])
-        label = nonZeroBadClass[i].split("/")[1]
-        cv2.imwrite("data/training/bad/" + label, img)
-
-
-    j = 0
-    while j <= 2*len(zeroStringBadClass):
-        img = cv2.imread(goodClass[j])
-        label = goodClass[j].split("/")[1]
-        cv2.imwrite("data/training/good/" + label, img)
-        j += 1
-
-
+        if i < len(goodClass):
+            img = iio.imread(goodClass[i])
+            label = goodClass[i].split("/")[1]
+            iio.imwrite("data/training/good/" + label, img)
 
 
     #"""
@@ -213,119 +221,222 @@ def distributeData(random_seed):
     missing.extend(targetFiles)
 
 
-    zeroStringBadClass = []        #"<0", "00", "000"
-    nonZeroBadClass = []            # >2 and 0
-    goodClass = []                  # <= 2 and > 0
+    zeroString = []       #"<0", "00", "000"
+    subZero = []
+    zero = []
+    badClass = []            # >2 and 0
+    goodClass = []                 # <= 2 and > 0
 
 
     for file in targetFiles:
         for filepath in directories6:
+            #print(processFileString(file))
             if re.search(processFileString(file),filepath) and matchingCond(file, filepath):
-            #    goodOrBad = "bad/"
-            #    if not re.search("000", qualityDict[file]) and not re.search("00", qualityDict[file]) and not re.search("<0", qualityDict[file]):
-            #        if float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0:
-            #            goodOrBad = "good/"
 
-            #    img = cv2.imread(filepath)
-            #    #print(file)
-            #    cv2.imwrite("data/validation/" + goodOrBad + file + ".jpg", img)
-            #    missing.remove(file)
-            #    break
-
-                if re.search("000", qualityDict[file]) or re.search("00", qualityDict[file]) or re.search("<0", qualityDict[file]):
-                    zeroStringBadClass.append(filepath)
+                if re.search("000", qualityDict[file]) or re.search("00", qualityDict[file]):
+                    zeroString.append(filepath)
                     continue
-                
-                elif float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0:
+
+                elif re.search("<0", qualityDict[file]):
+                    zeroString.append(filepath)
+                    continue
+
+                elif float(qualityDict[file]) <= 0.5:
+                    zeroString.append(filepath)
+                    continue
+
+                elif float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0.5:
                     goodClass.append(filepath)
                     continue
 
                 else:
-                    nonZeroBadClass.append(filepath)
+                    badClass.append(filepath)
                     continue
 
-    print("length of the zero string bad class validation is : " + str(len(zeroStringBadClass)))
+    print("length of zero class val is: " + str(len(zeroString)))
+    print("length of the good class val is: " + str(len(goodClass)))
+    print("length of the bad class val is: " + str(len(badClass)))
 
+    for i in range(max(len(zeroString), len(goodClass), len(badClass))):
+        if i < len(zeroString):
+            img = iio.imread(zeroString[i])
+            label = zeroString[i].split("/")[1]
+            iio.imwrite("data/validation/zeroString/" + label, img)
 
+        if i < len(badClass):
+            img = iio.imread(badClass[i])
+            label = badClass[i].split("/")[1]
+            iio.imwrite("data/validation/bad/" + label, img)
 
-    for i in range(len(zeroStringBadClass)):        #NOTE THIS LOOP STRICTLY ASSUMES THAT THE NUMBER OF "00", "000", "<0" will be the smallest class out of the images
-        img = cv2.imread(zeroStringBadClass[i])
-        label = zeroStringBadClass[i].split("/")[1]
-        cv2.imwrite("data/validation/bad/" + label, img)
+        if i < len(goodClass):
+            img = iio.imread(goodClass[i])
+            label = goodClass[i].split("/")[1]
+            iio.imwrite("data/validation/good/" + label, img)
 
-        img = cv2.imread(nonZeroBadClass[i])
-        label = nonZeroBadClass[i].split("/")[1]
-        cv2.imwrite("data/validation/bad/" + label, img)
-
-
-    j = 0
-    while j <= 2*len(zeroStringBadClass):
-        img = cv2.imread(goodClass[j])
-        label = goodClass[j].split("/")[1]
-        cv2.imwrite("data/validation/good/" + label, img)
-        j += 1
-
-
-   
     #TESTING
     targetFiles = testingX["filename"]
     quality = testingY
     qualityDict = dict(zip(targetFiles, quality))
     missing.extend(targetFiles)
 
+    zeroString = []       #"00", "000"
+    subZero = []
+    zero = []
+    badClass = []            # >2 and 0
+    goodClass = []                 # <= 2 and > 0
 
-    zeroStringBadClass = []         #"<0", "00", "000"
-    nonZeroBadClass = []            # >2 and 0
-    goodClass = []                  # <= 2 and > 0
 
     for file in targetFiles:
         for filepath in directories6:
-            if re.search(processFileString(file), filepath) and matchingCond(file, filepath):
-            #    goodOrBad = "bad/"
-            #    if not re.search("000", qualityDict[file]) and not re.search("00", qualityDict[file]) and not re.search("<0", qualityDict[file]):
-            #        if float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0:
-            #            goodOrBad = "good/"
+            #print(processFileString(file))
+            if re.search(processFileString(file),filepath) and matchingCond(file, filepath):
 
-            #    img = cv2.imread(filepath)
-            #    cv2.imwrite("data/testing/" + goodOrBad + file + ".jpg", img)
-            #    missing.remove(file)
-            #    break
-    
-
-
-
-                if re.search("000", qualityDict[file]) or re.search("00", qualityDict[file]) or re.search("<0", qualityDict[file]):
-                    zeroStringBadClass.append(filepath)
+                if re.search("000", qualityDict[file]) or re.search("00", qualityDict[file]):
+                    zeroString.append(filepath)
                     continue
-                
-                elif float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0:
+
+                elif re.search("<0", qualityDict[file]):
+                    zeroString.append(filepath)
+                    continue
+
+                elif float(qualityDict[file]) <= 0.5:
+                    zeroString.append(filepath)
+                    continue
+
+                elif float(qualityDict[file]) <= 2 and float(qualityDict[file]) > 0.5:
                     goodClass.append(filepath)
                     continue
 
                 else:
-                    nonZeroBadClass.append(filepath)
+                    badClass.append(filepath)
                     continue
 
-    print("length of the zero string bad class testing is : " + str(len(zeroStringBadClass)))
+    print("length of zero class testing is: " + str(len(zeroString)))
+    print("length of the good class testing is: " + str(len(goodClass)))
+    print("length of the bad class testing is: " + str(len(badClass)))
+
+    for i in range(max(len(zeroString), len(goodClass), len(badClass))):
+        if i < len(zeroString):
+            img = iio.imread(zeroString[i])
+            label = zeroString[i].split("/")[1]
+            iio.imwrite("data/testing/zeroString/" + label, img)
+
+        if i < len(badClass):
+            img = iio.imread(badClass[i])
+            label = badClass[i].split("/")[1]
+            iio.imwrite("data/testing/bad/" + label, img)
+
+        if i < len(goodClass):
+            img = iio.imread(goodClass[i])
+            label = goodClass[i].split("/")[1]
+            iio.imwrite("data/testing/good/" + label, img)
+
+
+    balanceDirectories("data/training/")
+    balanceDirectories("data/testing/")
+    balanceDirectories("data/validation/")
+
+def fullDataGen():
+
+    directories6 = []
+
+    dir = "processed/Healthy/segment/"
+    healthies = os.listdir(dir)
+    for image in healthies:
+        directories6.append(dir+image)
+
+    dir = "processed/Infected/segment/"
+    infecties = os.listdir(dir)
+    for image in infecties:
+        directories6.append(dir+image)
+    
+    dataset = pd.read_csv("dataset.csv", header=0)
+
+    print(len(dataset))
+
+    filenames = dataset["filename"]
+
+    for file in filenames:
+        for filepath in directories6:
+            if re.search(processFileString(file), filepath) and matchingCond(file, filepath):
+                img = iio.imread(filepath)
+                iio.imwrite("fullData/" + file + ".jpg", img)
+                break
 
 
 
-    for i in range(len(zeroStringBadClass)):        #NOTE THIS LOOP STRICTLY ASSUMES THAT THE NUMBER OF "00", "000", "<0" will be the smallest class out of the images
-        img = cv2.imread(zeroStringBadClass[i])
-        label = zeroStringBadClass[i].split("/")[1]
-        cv2.imwrite("data/testing/bad/" + label, img)
-
-        img = cv2.imread(nonZeroBadClass[i])
-        label = nonZeroBadClass[i].split("/")[1]
-        cv2.imwrite("data/testing/bad/" + label , img)
 
 
-    j = 0
-    while j <= 2*len(zeroStringBadClass):
-        img = cv2.imread(goodClass[j])
-        label = goodClass[j].split("/")[1]
-        cv2.imwrite("data/testing/good/" + label, img)
-        j += 1
+searchFiles=[]
+def recurse(target):
+
+    contents = os.listdir(target)
+
+    for dir in contents:
+        if re.search(".csv", dir) or re.search("graysegment", target+dir):
+            continue
+
+        elif re.search(".JPG", dir) and re.search("segment", target+dir):
+            searchFiles.extend([target + x for x in contents])
+            break
+
+        elif re.search(".JPG", dir):
+            continue
+
+        else:
+            recurse(target+dir+"/")
+
+
+def getAllImages():
+
+    emptyData("allImages/")
+
+    filepaths = []
+    searchDirs = ["allTargets/TwoFries/", "allTargets/Healthy/", "allTargets/Infected/", "processed/"]
+
+    df = pd.read_excel("master_sheet.xlsx")
+
+    targets = list(df["filename"])
+
+    targetsCopy = list(df["filename"])
+
+    count = 0
+
+    while len(targets)>0 and count < 4:
+
+        recurse(searchDirs[count])
+
+        print("WE ARE MISSING: " + str(len(targets)))
+
+        for file in targets:
+            for filepath in searchFiles:
+                if re.search(processFileString(file), filepath) and matchingCond(file, filepath):
+                    #print("FOUND MATCH: " + file + "    WITH: " + filepath)
+                    filepaths.append(filepath)
+                    if file in targetsCopy:
+                        targetsCopy.remove(file)
+
+
+
+        found = len(targets) - len(targetsCopy)
+        print("WE FOUND: " + str(found))
+        targets = np.copy(targetsCopy)
+        count += 1
+
+    print("Missing: " + str(targets))
+
+    print(len(filepaths))
+
+
+    for filepath in filepaths:
+        comps = filepath.split("/")
+        label = comps[len(comps)-1]
+        img = iio.imread(filepath)
+        iio.imwrite("allImages/"+label, img)
+
+
+getAllImages()
+
 
 
 

@@ -103,6 +103,33 @@ def innerJoin():
 
     joined.to_csv("dataset.csv", index=False)
 
+def getTrueLabels():
+    df = pd.read_csv("dataset.csv")
+
+    filenames = list(df["filename"])
+
+    score = list(df["Final majority vote"])
+
+    mislabelled = open("missing_5_classes.txt", 'r')
+    lines = mislabelled.readlines()
+
+    for line in lines:
+        #print(line)
+        target = line.split(",")[0]
+        target = target.split("\\")[1]
+        if re.search("\(", target):
+            target = target.split("(")[0] + target.split(")")[1]
+
+        #stripping new line character
+        if re.search("\n", target):
+            target = target[:len(target)-1]
+
+        #stripping .jpg file extension
+        target = target[:len(target)-4]
+
+        index = filenames.index(target)
+        print(line[:len(line)-1] + ", true label: " + str(score[index]))
+
 
 
 
@@ -113,5 +140,5 @@ def main():
     reference()
     innerJoin()
 
-main()
+getTrueLabels()
     
